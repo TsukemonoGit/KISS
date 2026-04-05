@@ -346,8 +346,8 @@ class Widgets extends Forwarder implements WidgetView.OnWidgetInteractionListene
             int cellWidth = Math.max(1, widgetArea.getCellWidth());
             int cellHeight = Math.max(1, widgetArea.getCellHeight());
             
-            int spanX = Math.max(1, (int) Math.ceil((float) widthPx / cellWidth));
-            int spanY = Math.max(1, (int) Math.ceil((float) heightPx / cellHeight));
+            int spanX = 1;
+            int spanY = 1;
             spanX = Math.min(spanX, WidgetGridLayout.COLUMNS);
             
             int[] pos = widgetArea.findFirstEmptySpace(spanX, spanY);

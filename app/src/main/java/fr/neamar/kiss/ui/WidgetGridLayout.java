@@ -63,12 +63,14 @@ public class WidgetGridLayout extends ViewGroup {
         if (ev.getAction() == MotionEvent.ACTION_DOWN) {
             float x = ev.getX();
             float y = ev.getY();
+            int tolerance = (int) (32 * getResources().getDisplayMetrics().density); // Match the generous 32dp grab radius
             for (int i = 0; i < getChildCount(); i++) {
                 View child = getChildAt(i);
                 if (child.getVisibility() != GONE && child instanceof WidgetView) {
                     WidgetView wv = (WidgetView) child;
                     if (wv.isInEditMode()) {
-                        if (x < child.getLeft() || x > child.getRight() || y < child.getTop() || y > child.getBottom()) {
+                        if (x < child.getLeft() - tolerance || x > child.getRight() + tolerance 
+                                || y < child.getTop() - tolerance || y > child.getBottom() + tolerance) {
                             wv.exitEditMode();
                         }
                     }
@@ -179,10 +181,7 @@ public class WidgetGridLayout extends ViewGroup {
 
     public boolean isAreaEmpty(int x, int y, int spanX, int spanY, View ignoreView) {
         if (x < 0 || y < 0 || x + spanX > COLUMNS) {
-            return false; // Horizontal out of bounds
-        }
-        if (y < 0 || y + spanY > Math.max(mRows, mCalculatedRows)) {
-            return false; // Vertical out of bounds (allow grid to momentarily stretch if needed)
+            return false; // Horizontal or negative vertical out of bounds
         }
         
         // Build an occupancy mask excluding the ignored view safely
@@ -261,27 +260,58 @@ public class WidgetGridLayout extends ViewGroup {
         invalidate();
     }
 
-    public void previewResize(View view, int rawWidthPx, int rawHeightPx, int minWidthDp, int minHeightDp) {
+    public void previewResize(View view, int dLeft, int dTop, int dRight, int dBottom, int minWidthDp, int minHeightDp) {
         LayoutParams lp = (LayoutParams) view.getLayoutParams();
         float density = getResources().getDisplayMetrics().density;
         
-        mDropTargetCellX = lp.cellX;
-        mDropTargetCellY = lp.cellY;
+        int targetPixelLeft = lp.cellX * mCellWidth + dLeft;
+        int targetPixelRight = (lp.cellX + lp.spanX) * mCellWidth + dRight;
+        int targetPixelTop = lp.cellY * mCellHeight + dTop;
+        int targetPixelBottom = (lp.cellY + lp.spanY) * mCellHeight + dBottom;
 
-        // Calculate needed span based on requested pixel size
-        int newSpanX = Math.max(1, Math.round((float) rawWidthPx / mCellWidth));
-        int newSpanY = Math.max(1, Math.round((float) rawHeightPx / mCellHeight));
+        mDropTargetCellX = Math.round((float) targetPixelLeft / mCellWidth);
+        int newRightCell = Math.round((float) targetPixelRight / mCellWidth);
+        mDropTargetCellY = Math.round((float) targetPixelTop / mCellHeight);
+        int newBottomCell = Math.round((float) targetPixelBottom / mCellHeight);
 
-        // Enforce min spans based on Android AppWidgetProviderInfo
-        int minSpanX = Math.max(1, (int) Math.ceil((minWidthDp * density) / mCellWidth));
-        int minSpanY = Math.max(1, (int) Math.ceil((minHeightDp * density) / mCellHeight));
+        // Force absolute 1x1 minimum for ultimate freedom
+        int minSpanX = 1;
+        int minSpanY = 1;
         
-        newSpanX = Math.max(newSpanX, minSpanX);
-        newSpanY = Math.max(newSpanY, minSpanY);
+        int newSpanX = newRightCell - mDropTargetCellX;
+        if (newSpanX < minSpanX) {
+            if (dLeft != 0) mDropTargetCellX = newRightCell - minSpanX;
+            else newRightCell = mDropTargetCellX + minSpanX;
+            newSpanX = minSpanX;
+        }
+        
+        int newSpanY = newBottomCell - mDropTargetCellY;
+        if (newSpanY < minSpanY) {
+            if (dTop != 0) mDropTargetCellY = newBottomCell - minSpanY;
+            else newBottomCell = mDropTargetCellY + minSpanY;
+            newSpanY = minSpanY;
+        }
 
-        mDropTargetSpanX = Math.min(newSpanX, COLUMNS - lp.cellX);
-        // Allow widget to resize downwards dynamically if we want
-        mDropTargetSpanY = newSpanY;
+        // Clamp to screen bounds
+        if (mDropTargetCellX < 0) {
+            mDropTargetCellX = 0;
+            // newSpanX = Math.max(minSpanX, newRightCell - mDropTargetCellX); // Not strictly needed
+        }
+        if (mDropTargetCellY < 0) {
+            mDropTargetCellY = 0;
+        }
+
+        // Prevent exceeding right edge
+        if (mDropTargetCellX + newSpanX > COLUMNS) {
+            if (dRight != 0) {
+                newSpanX = COLUMNS - mDropTargetCellX;
+            } else if (dLeft != 0) {
+                mDropTargetCellX = COLUMNS - newSpanX;
+            }
+        }
+
+        mDropTargetSpanX = Math.max(minSpanX, newSpanX);
+        mDropTargetSpanY = Math.max(minSpanY, newSpanY);
 
         mDropTargetValid = isAreaEmpty(mDropTargetCellX, mDropTargetCellY, mDropTargetSpanX, mDropTargetSpanY, view);
         invalidate();

@@ -31,11 +31,13 @@ public class WidgetView extends AppWidgetHostView {
     private float mGestureStartRawX, mGestureStartRawY;
     private int mStartLeft, mStartTop, mStartWidth, mStartHeight;
 
-    private static final int HANDLE_DP = 56;
-    private int mHandlePx;
+    private static final int RESIZE_LEFT = 1;
+    private static final int RESIZE_TOP = 2;
+    private static final int RESIZE_RIGHT = 4;
+    private static final int RESIZE_BOTTOM = 8;
+    private int mResizeFlags = 0;
 
     private final Paint mHandlePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Path  mHandlePath  = new Path();
 
     private OnWidgetInteractionListener mListener;
 
@@ -46,10 +48,6 @@ public class WidgetView extends AppWidgetHostView {
 
     public WidgetView(Context context) {
         super(context);
-        mHandlePaint.setColor(Color.WHITE);
-        mHandlePaint.setAlpha(200);
-        mHandlePaint.setStyle(Paint.Style.FILL);
-        mHandlePx = dpToPx(context, HANDLE_DP);
         setWillNotDraw(false);
     }
 
@@ -81,15 +79,29 @@ public class WidgetView extends AppWidgetHostView {
 
         int w = getWidth();
         int h = getHeight();
-        int size = dpToPx(getContext(), HANDLE_DP);
+        float density = getResources().getDisplayMetrics().density;
+        
+        // Semi-transparent background overlay
+        mHandlePaint.setStyle(Paint.Style.FILL);
+        mHandlePaint.setColor(Color.argb(50, 255, 255, 255));
+        canvas.drawRoundRect(0, 0, w, h, 12 * density, 12 * density, mHandlePaint);
 
-        mHandlePath.reset();
-        mHandlePath.moveTo(w,        h);
-        mHandlePath.lineTo(w - size, h);
-        mHandlePath.lineTo(w,        h - size);
-        mHandlePath.close();
+        float margin = 8 * density;
+        float r = 6 * density; // handle radius
 
-        canvas.drawPath(mHandlePath, mHandlePaint);
+        // Outline
+        mHandlePaint.setStyle(Paint.Style.STROKE);
+        mHandlePaint.setColor(Color.WHITE);
+        mHandlePaint.setStrokeWidth(2 * density);
+        // Draw slightly inset so it matches the handles visually
+        canvas.drawRoundRect(r, r, w - r, h - r, 12 * density, 12 * density, mHandlePaint);
+
+        // Handles (dots)
+        mHandlePaint.setStyle(Paint.Style.FILL);
+        canvas.drawCircle(r,         h / 2f,     r, mHandlePaint); // Left
+        canvas.drawCircle(w - r,     h / 2f,     r, mHandlePaint); // Right
+        canvas.drawCircle(w / 2f,    r,          r, mHandlePaint); // Top
+        canvas.drawCircle(w / 2f,    h - r,      r, mHandlePaint); // Bottom
     }
 
     @Override
@@ -106,7 +118,8 @@ public class WidgetView extends AppWidgetHostView {
                 if (mEditMode) {
                     mGestureStartRawX = ev.getRawX();
                     mGestureStartRawY = ev.getRawY();
-                    mResizeMode = isInResizeHandle(ev.getX(), ev.getY());
+                    mResizeFlags = calculateResizeFlags(ev.getX(), ev.getY());
+                    mResizeMode = (mResizeFlags != 0);
                     captureLayoutStart();
                     
                     if (getParent() instanceof WidgetGridLayout) {
@@ -152,10 +165,25 @@ public class WidgetView extends AppWidgetHostView {
             case MotionEvent.ACTION_MOVE: {
                 if (grid != null) {
                     if (mResizeMode) {
-                        int rawW = Math.max(dpToPx(getContext(), 40), mStartWidth + (int) dx);
-                        int rawH = Math.max(dpToPx(getContext(), 40), mStartHeight + (int) dy);
-                        // Using fixed minimums (e.g. 40dp) here. 
-                        grid.previewResize(this, rawW, rawH, 40, 40);
+                        int dLeft = (mResizeFlags & RESIZE_LEFT) != 0 ? (int) dx : 0;
+                        int dRight = (mResizeFlags & RESIZE_RIGHT) != 0 ? (int) dx : 0;
+                        int dTop = (mResizeFlags & RESIZE_TOP) != 0 ? (int) dy : 0;
+                        int dBottom = (mResizeFlags & RESIZE_BOTTOM) != 0 ? (int) dy : 0;
+                        
+                        android.appwidget.AppWidgetProviderInfo info = getAppWidgetInfo();
+                        int minW = 40;
+                        int minH = 40;
+                        if (info != null) {
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.ICE_CREAM_SANDWICH) {
+                                minW = info.minResizeWidth > 0 ? info.minResizeWidth : info.minWidth;
+                                minH = info.minResizeHeight > 0 ? info.minResizeHeight : info.minHeight;
+                            } else {
+                                minW = info.minWidth;
+                                minH = info.minHeight;
+                            }
+                        }
+                        
+                        grid.previewResize(this, dLeft, dTop, dRight, dBottom, minW, minH);
                     } else {
                         setTranslationX(dx);
                         setTranslationY(dy);
@@ -190,9 +218,23 @@ public class WidgetView extends AppWidgetHostView {
         return true;
     }
 
-    private boolean isInResizeHandle(float localX, float localY) {
-        int handle = dpToPx(getContext(), HANDLE_DP);
-        return localX >= getWidth() - handle && localY >= getHeight() - handle;
+    private int calculateResizeFlags(float localX, float localY) {
+        int w = getWidth();
+        int h = getHeight();
+        float margin = dpToPx(getContext(), 8); // Same as margin in onDraw
+        float r = dpToPx(getContext(), 32); // Generous grab radius around the dot
+        
+        int flags = 0;
+        // Left handle is at (margin, h/2)
+        if (Math.hypot(localX - margin, localY - h/2f) <= r) flags |= RESIZE_LEFT;
+        // Right handle is at (w - margin, h/2)
+        if (Math.hypot(localX - (w - margin), localY - h/2f) <= r) flags |= RESIZE_RIGHT;
+        // Top handle is at (w/2, margin)
+        if (Math.hypot(localX - w/2f, localY - margin) <= r) flags |= RESIZE_TOP;
+        // Bottom handle is at (w/2, h - margin)
+        if (Math.hypot(localX - w/2f, localY - (h - margin)) <= r) flags |= RESIZE_BOTTOM;
+        
+        return flags;
     }
 
     private void captureLayoutStart() {
