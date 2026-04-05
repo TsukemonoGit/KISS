@@ -58,9 +58,12 @@ public class WidgetGridLayout extends ViewGroup {
         mCellHeight = (int) (75 * getResources().getDisplayMetrics().density); // Default 75dp cell height
     }
 
+    private WidgetView mTargetWidget = null;
+
     @Override
     public boolean dispatchTouchEvent(MotionEvent ev) {
         if (ev.getAction() == MotionEvent.ACTION_DOWN) {
+            mTargetWidget = null;
             float x = ev.getX();
             float y = ev.getY();
             int tolerance = (int) (32 * getResources().getDisplayMetrics().density); // Match the generous 32dp grab radius
@@ -69,14 +72,29 @@ public class WidgetGridLayout extends ViewGroup {
                 if (child.getVisibility() != GONE && child instanceof WidgetView) {
                     WidgetView wv = (WidgetView) child;
                     if (wv.isInEditMode()) {
-                        if (x < child.getLeft() - tolerance || x > child.getRight() + tolerance 
-                                || y < child.getTop() - tolerance || y > child.getBottom() + tolerance) {
+                        if (x >= child.getLeft() - tolerance && x <= child.getRight() + tolerance 
+                                && y >= child.getTop() - tolerance && y <= child.getBottom() + tolerance) {
+                            mTargetWidget = wv;
+                        } else {
                             wv.exitEditMode();
                         }
                     }
                 }
             }
         }
+        
+        if (mTargetWidget != null) {
+            MotionEvent transformed = MotionEvent.obtain(ev);
+            transformed.offsetLocation(-mTargetWidget.getLeft(), -mTargetWidget.getTop());
+            mTargetWidget.dispatchTouchEvent(transformed);
+            transformed.recycle();
+            
+            if (ev.getAction() == MotionEvent.ACTION_UP || ev.getAction() == MotionEvent.ACTION_CANCEL) {
+                mTargetWidget = null;
+            }
+            return true; // We consumed it, preventing background swipes
+        }
+        
         return super.dispatchTouchEvent(ev);
     }
 

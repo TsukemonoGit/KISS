@@ -272,8 +272,10 @@ public class WidgetView extends AppWidgetHostView {
     private int calculateResizeFlags(float localX, float localY) {
         int w = getWidth();
         int h = getHeight();
-        float margin = dpToPx(getContext(), 8); // Same as margin in onDraw
-        float r = dpToPx(getContext(), 32); // Generous grab radius around the dot
+        // Negative margin pushes the center of the hit target OUTSIDE the widget bounds.
+        // This is possible because WidgetGridLayout forwards touches up to 32dp outside the bounds!
+        float margin = dpToPx(getContext(), -8); 
+        float r = dpToPx(getContext(), 24); // Reduced from 32; inward reach goes from 40dp to just 16dp
         
         int flags = 0;
         // Left handle is at (margin, h/2)
