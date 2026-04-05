@@ -27,6 +27,7 @@ public class WidgetView extends AppWidgetHostView {
 
     private boolean mEditMode = false;
     private boolean mResizeMode = false;
+    private boolean mDeletePressed = false;
 
     private float mGestureStartRawX, mGestureStartRawY;
     private int mStartLeft, mStartTop, mStartWidth, mStartHeight;
@@ -44,6 +45,7 @@ public class WidgetView extends AppWidgetHostView {
     public interface OnWidgetInteractionListener {
         void onWidgetMoved(WidgetView view);
         void onWidgetResized(WidgetView view);
+        void onWidgetDeleted(WidgetView view);
     }
 
     public WidgetView(Context context) {
@@ -73,8 +75,8 @@ public class WidgetView extends AppWidgetHostView {
     }
 
     @Override
-    protected void onDraw(Canvas canvas) {
-        super.onDraw(canvas);
+    protected void dispatchDraw(Canvas canvas) {
+        super.dispatchDraw(canvas);
         if (!mEditMode) return;
 
         int w = getWidth();
@@ -102,6 +104,24 @@ public class WidgetView extends AppWidgetHostView {
         canvas.drawCircle(w - r,     h / 2f,     r, mHandlePaint); // Right
         canvas.drawCircle(w / 2f,    r,          r, mHandlePaint); // Top
         canvas.drawCircle(w / 2f,    h - r,      r, mHandlePaint); // Bottom
+
+        // Delete 'X' Button at Top-Right
+        float dr = 14 * density; // radius for delete button
+        float cx = w - dr; // flush with edge
+        float cy = dr;
+
+        // Draw red circle
+        mHandlePaint.setColor(Color.argb(200, 255, 50, 50));
+        mHandlePaint.setStyle(Paint.Style.FILL);
+        canvas.drawCircle(cx, cy, dr, mHandlePaint);
+
+        // Draw X lines
+        mHandlePaint.setColor(Color.WHITE);
+        mHandlePaint.setStyle(Paint.Style.STROKE);
+        mHandlePaint.setStrokeWidth(2 * density);
+        float p = 5 * density; // padding for the X
+        canvas.drawLine(cx - p, cy - p, cx + p, cy + p, mHandlePaint);
+        canvas.drawLine(cx + p, cy - p, cx - p, cy + p, mHandlePaint);
     }
 
     @Override
@@ -118,6 +138,21 @@ public class WidgetView extends AppWidgetHostView {
                 if (mEditMode) {
                     mGestureStartRawX = ev.getRawX();
                     mGestureStartRawY = ev.getRawY();
+                    
+                    float density = getResources().getDisplayMetrics().density;
+                    float dr = 14 * density;
+                    float cx = getWidth() - dr;
+                    float cy = dr;
+                    float hitRadius = 24 * density; // generous hit radius
+                    
+                    if (Math.hypot(ev.getX() - cx, ev.getY() - cy) <= hitRadius) {
+                        mDeletePressed = true;
+                        mResizeFlags = 0;
+                        mResizeMode = false;
+                        return true; // Consume touch for delete button
+                    }
+                    mDeletePressed = false;
+                    
                     mResizeFlags = calculateResizeFlags(ev.getX(), ev.getY());
                     mResizeMode = (mResizeFlags != 0);
                     captureLayoutStart();
@@ -163,6 +198,8 @@ public class WidgetView extends AppWidgetHostView {
 
         switch (ev.getAction()) {
             case MotionEvent.ACTION_MOVE: {
+                if (mDeletePressed) return true; // Ignore moves while pressing delete
+                
                 if (grid != null) {
                     if (mResizeMode) {
                         int dLeft = (mResizeFlags & RESIZE_LEFT) != 0 ? (int) dx : 0;
@@ -193,6 +230,19 @@ public class WidgetView extends AppWidgetHostView {
                 return true;
             }
             case MotionEvent.ACTION_UP: {
+                if (mDeletePressed) {
+                    float density = getResources().getDisplayMetrics().density;
+                    float dr = 14 * density;
+                    float cx = getWidth() - dr;
+                    float cy = dr;
+                    float hitRadius = 24 * density;
+                    if (Math.hypot(ev.getX() - cx, ev.getY() - cy) <= hitRadius) {
+                        if (mListener != null) mListener.onWidgetDeleted(this);
+                    }
+                    mDeletePressed = false;
+                    return true;
+                }
+                
                 boolean dropped = false;
                 if (grid != null) {
                     dropped = grid.commitDragOrResize(this);
@@ -209,6 +259,7 @@ public class WidgetView extends AppWidgetHostView {
                 return true;
             }
             case MotionEvent.ACTION_CANCEL:
+                mDeletePressed = false;
                 setTranslationX(0f);
                 setTranslationY(0f);
                 if (grid != null) grid.abortInteraction();

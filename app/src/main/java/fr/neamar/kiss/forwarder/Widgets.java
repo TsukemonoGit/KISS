@@ -272,19 +272,7 @@ class Widgets extends Forwarder implements WidgetView.OnWidgetInteractionListene
         hostView.setLongClickable(true);
         hostView.setOnLongClickListener(v -> {
             WidgetView widgetView = (WidgetView) v;
-            AppWidgetProviderInfo currentInfo = mAppWidgetManager.getAppWidgetInfo(widgetView.getAppWidgetId());
-
-            ArrayAdapter<ListPopup.Item> popupMenuAdapter = new ArrayAdapter<>(mainActivity, R.layout.popup_list_item);
-            buildPopupMenu(mainActivity, popupMenuAdapter, currentInfo, widgetView);
-            ListPopup popupMenu = new ListPopup(mainActivity);
-            popupMenu.setAdapter(popupMenuAdapter);
-            popupMenu.setOnItemClickListener((adapter, view, position) -> {
-                @StringRes int stringId = ((ListPopup.Item) adapter.getItem(position)).stringId;
-                popupMenuClickHandler(stringId, widgetView);
-            });
-            mainActivity.registerPopup(popupMenu);
-            popupMenu.show(hostView);
-            // Note: edit mode is NOT entered here; user must select "Move / Resize" from the popup.
+            widgetView.enterEditMode();
             return true;
         });
 
@@ -292,27 +280,7 @@ class Widgets extends Forwarder implements WidgetView.OnWidgetInteractionListene
         mAppWidgetHost.startListening();
     }
 
-    private void buildPopupMenu(Context context, ArrayAdapter<ListPopup.Item> adapter,
-                                AppWidgetProviderInfo currentInfo, AppWidgetHostView widget) {
-        adapter.add(new ListPopup.Item(context, R.string.menu_widget_edit));
-        if (isReconfigurable(currentInfo)) {
-            adapter.add(new ListPopup.Item(context, R.string.menu_widget_settings));
-        }
-        adapter.add(new ListPopup.Item(context, R.string.menu_widget_remove));
-    }
-
-    private void popupMenuClickHandler(@StringRes int stringId, WidgetView widget) {
-        if (stringId == R.string.menu_widget_edit) {
-            // Enter move/resize mode: the next touch on the widget will drag or resize it.
-            widget.enterEditMode();
-        } else if (stringId == R.string.menu_widget_settings) {
-            reConfigureAppWidget(widget.getAppWidgetId());
-        } else if (stringId == R.string.menu_widget_remove) {
-            widgetArea.removeView(widget);
-            mAppWidgetHost.deleteAppWidgetId(widget.getAppWidgetId());
-            serializeState();
-        }
-    }
+    // Popup menu logic was here. Removed in favor of direct edit-mode.
 
     // -------------------------------------------------------------------------
     // WidgetView.OnWidgetInteractionListener
@@ -325,6 +293,13 @@ class Widgets extends Forwarder implements WidgetView.OnWidgetInteractionListene
 
     @Override
     public void onWidgetResized(WidgetView view) {
+        serializeState();
+    }
+
+    @Override
+    public void onWidgetDeleted(WidgetView view) {
+        widgetArea.removeView(view);
+        mAppWidgetHost.deleteAppWidgetId(view.getAppWidgetId());
         serializeState();
     }
 
