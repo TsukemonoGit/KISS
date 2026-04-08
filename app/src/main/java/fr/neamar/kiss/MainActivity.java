@@ -764,8 +764,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
             anim.start();
             kissBar.setVisibility(View.VISIBLE);
 
-            // Disable fast-scroll grabbing in the app list; it is too easy to trigger accidentally.
-            list.setFastScrollEnabled(false);
+            list.setFastScrollEnabled(shouldEnableAppListFastScroll());
         } else {
             isDisplayingKissBar = false;
             // Hide the bar
@@ -1060,5 +1059,9 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
 
     public void onKeyboardVisibilityChanged(boolean keyboardIsVisible) {
         systemUiVisibilityHelper.onKeyboardVisibilityChanged(keyboardIsVisible);
+    }
+
+    private boolean shouldEnableAppListFastScroll() {
+        return prefs.getBoolean("enable-right-edge-fast-scroll", true);
     }
 }
