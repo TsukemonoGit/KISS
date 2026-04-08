@@ -764,8 +764,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
             anim.start();
             kissBar.setVisibility(View.VISIBLE);
 
-            // Display the alphabet on the scrollbar (#926)
-            list.setFastScrollEnabled(true);
+            list.setFastScrollEnabled(shouldEnableAppListFastScroll());
         } else {
             isDisplayingKissBar = false;
             // Hide the bar
@@ -791,8 +790,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
                 clearSearchText();
             }
 
-            // Do not display the alphabetical scrollbar (#926)
-            // They only make sense when displaying apps alphabetically, not for searching
+            // Keep fast-scroll disabled when leaving the app list as well.
             list.setFastScrollEnabled(false);
         }
 
@@ -1061,5 +1059,9 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
 
     public void onKeyboardVisibilityChanged(boolean keyboardIsVisible) {
         systemUiVisibilityHelper.onKeyboardVisibilityChanged(keyboardIsVisible);
+    }
+
+    private boolean shouldEnableAppListFastScroll() {
+        return prefs.getBoolean("enable-right-edge-fast-scroll", true);
     }
 }

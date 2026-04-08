@@ -232,6 +232,11 @@
         </PreferenceCategory>
         <PreferenceCategory android:title="@string/misc">
             <SwitchPreference
+                android:defaultValue="true"
+                android:key="enable-right-edge-fast-scroll"
+                android:summary="@string/enable_right_edge_fast_scroll_summary"
+                android:title="@string/enable_right_edge_fast_scroll" />
+            <SwitchPreference
                 android:defaultValue="false"
                 android:key="pref-rounded-list"
                 android:title="@string/rounded_list" />
