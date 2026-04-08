@@ -764,8 +764,8 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
             anim.start();
             kissBar.setVisibility(View.VISIBLE);
 
-            // Display the alphabet on the scrollbar (#926)
-            list.setFastScrollEnabled(true);
+            // Disable fast-scroll grabbing in the app list; it is too easy to trigger accidentally.
+            list.setFastScrollEnabled(false);
         } else {
             isDisplayingKissBar = false;
             // Hide the bar
@@ -791,8 +791,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
                 clearSearchText();
             }
 
-            // Do not display the alphabetical scrollbar (#926)
-            // They only make sense when displaying apps alphabetically, not for searching
+            // Keep fast-scroll disabled when leaving the app list as well.
             list.setFastScrollEnabled(false);
         }
 
