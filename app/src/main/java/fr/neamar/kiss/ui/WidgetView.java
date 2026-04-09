@@ -22,7 +22,7 @@ import java.util.Collections;
 public class WidgetView extends AppWidgetHostView {
     private static final float HORIZONTAL_SWIPE_CANCEL_MULTIPLIER = 0.5f;
 
-    protected boolean mHasPerformedLongPress;
+    private boolean mHasPerformedLongPress;
     private CheckForLongPress mPendingCheckForLongPress;
     private float mDownX, mDownY;
     private final int mTouchSlop;
