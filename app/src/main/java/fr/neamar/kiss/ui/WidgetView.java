@@ -20,10 +20,12 @@ import java.util.Collections;
  * Relies on WidgetGridLayout for cell management.
  */
 public class WidgetView extends AppWidgetHostView {
+    private static final float HORIZONTAL_SWIPE_CANCEL_MULTIPLIER = 0.5f;
 
     protected boolean mHasPerformedLongPress;
     private CheckForLongPress mPendingCheckForLongPress;
     private float mDownX, mDownY;
+    private final int mTouchSlop;
 
     private boolean mEditMode = false;
     private boolean mResizeMode = false;
@@ -50,6 +52,7 @@ public class WidgetView extends AppWidgetHostView {
 
     public WidgetView(Context context) {
         super(context);
+        mTouchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
         setWillNotDraw(false);
     }
 
@@ -168,7 +171,10 @@ public class WidgetView extends AppWidgetHostView {
 
             case MotionEvent.ACTION_MOVE:
                 if (mEditMode) return true;
-                if (Math.abs(ev.getRawX() - mDownX) > 10 || Math.abs(ev.getRawY() - mDownY) > 10) {
+                float deltaX = Math.abs(ev.getRawX() - mDownX);
+                float deltaY = Math.abs(ev.getRawY() - mDownY);
+                float horizontalCancelSlop = mTouchSlop * HORIZONTAL_SWIPE_CANCEL_MULTIPLIER;
+                if (deltaX > horizontalCancelSlop || deltaY > mTouchSlop) {
                     mHasPerformedLongPress = false;
                     cancelPendingLongPress();
                 }
