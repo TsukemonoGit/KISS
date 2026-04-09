@@ -20,7 +20,7 @@ import java.util.Collections;
  * Relies on WidgetGridLayout for cell management.
  */
 public class WidgetView extends AppWidgetHostView {
-    private static final float HORIZONTAL_SWIPE_CANCEL_MULTIPLIER = 2.0f;
+    private static final float HORIZONTAL_SWIPE_CANCEL_MULTIPLIER = 1.0f;
 
     private boolean mHasPerformedLongPress;
     private CheckForLongPress mPendingCheckForLongPress;
