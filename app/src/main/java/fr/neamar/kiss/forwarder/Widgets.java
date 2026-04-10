@@ -78,8 +78,12 @@ class Widgets extends Forwarder implements WidgetView.OnWidgetInteractionListene
         mAppWidgetHost = new WidgetHost(mainActivity, APPWIDGET_HOST_ID, this::onAppWidgetRemoved);
         widgetArea = mainActivity.findViewById(R.id.widgetLayout);
 
-        requestAppWidgetPicked = mainActivity.registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), activityResult -> appWidgetPicked(activityResult.getResultCode(), activityResult.getData()));
-        requestAppWidgetBound = mainActivity.registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), activityResult -> appWidgetBound(activityResult.getResultCode(), activityResult.getData()));
+        requestAppWidgetPicked = mainActivity.registerForActivityResult(
+                new ActivityResultContracts.StartActivityForResult(),
+                activityResult -> appWidgetPicked(activityResult.getResultCode(), activityResult.getData()));
+        requestAppWidgetBound = mainActivity.registerForActivityResult(
+                new ActivityResultContracts.StartActivityForResult(),
+                activityResult -> appWidgetBound(activityResult.getResultCode(), activityResult.getData()));
 
         restoreWidgets();
     }
@@ -132,7 +136,8 @@ class Widgets extends Forwarder implements WidgetView.OnWidgetInteractionListene
 
     private void removeWidget(Intent data) {
         if (data != null) {
-            int appWidgetId = data.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID);
+            int appWidgetId = data.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID,
+                    AppWidgetManager.INVALID_APPWIDGET_ID);
             if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
                 List<View> viewsToRemove = new ArrayList<>();
                 for (int i = 0; i < widgetArea.getChildCount(); i++) {
@@ -247,7 +252,8 @@ class Widgets extends Forwarder implements WidgetView.OnWidgetInteractionListene
     }
 
     /**
-     * Retrieve a WidgetView for the specified widget id, apply grid layout, add context menu.
+     * Retrieve a WidgetView for the specified widget id, apply grid layout, add
+     * context menu.
      *
      * @param appWidgetId id of widget to add
      * @param cx          cell x
@@ -262,7 +268,8 @@ class Widgets extends Forwarder implements WidgetView.OnWidgetInteractionListene
             return;
         }
 
-        WidgetView hostView = (WidgetView) mAppWidgetHost.createView(mainActivity.getApplicationContext(), appWidgetId, appWidgetInfo);
+        WidgetView hostView = (WidgetView) mAppWidgetHost.createView(mainActivity.getApplicationContext(), appWidgetId,
+                appWidgetInfo);
         hostView.setAppWidget(appWidgetId, appWidgetInfo);
         hostView.setOnWidgetInteractionListener(this);
 
@@ -310,26 +317,27 @@ class Widgets extends Forwarder implements WidgetView.OnWidgetInteractionListene
     private void addAppWidget(int appWidgetId, AppWidgetProviderInfo appWidgetInfo) {
         int minWidthDp = appWidgetInfo.minWidth;
         int minHeightDp = getMinHeight(appWidgetInfo);
-        if (minHeightDp <= 0) minHeightDp = DEFAULT_WIDGET_HEIGHT_DP;
-        
+        if (minHeightDp <= 0)
+            minHeightDp = DEFAULT_WIDGET_HEIGHT_DP;
+
         float density = mainActivity.getResources().getDisplayMetrics().density;
         int widthPx = (int) (minWidthDp * density);
         int heightPx = (int) (minHeightDp * density);
-        
+
         // Wait until grid has dimensions to place widget
         widgetArea.post(() -> {
             int cellWidth = Math.max(1, widgetArea.getCellWidth());
             int cellHeight = Math.max(1, widgetArea.getCellHeight());
-            
+
             int spanX = 1;
             int spanY = 1;
             spanX = Math.min(spanX, WidgetGridLayout.COLUMNS);
-            
+
             int[] pos = widgetArea.findFirstEmptySpace(spanX, spanY);
             if (pos != null) {
                 addWidget(appWidgetId, pos[0], pos[1], spanX, spanY);
             } else {
-                // If grid appears full, just force place at bottom or 0,0 overlapping 
+                // If grid appears full, just force place at bottom or 0,0 overlapping
                 // Alternatively, don't add, but we should add. We add at 0,0.
                 Log.w(TAG, "No empty space in grid, forcing add at (0,0)");
                 addWidget(appWidgetId, 0, 0, spanX, spanY);
@@ -339,11 +347,23 @@ class Widgets extends Forwarder implements WidgetView.OnWidgetInteractionListene
     }
 
     private void requestBindWidget(@NonNull Intent data) {
-        final int appWidgetId = data.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID);
-        final ComponentName provider = data.getParcelableExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER);
-        final UserHandle profile = data.getParcelableExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER_PROFILE);
+        final int appWidgetId = data.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID,
+                AppWidgetManager.INVALID_APPWIDGET_ID);
+        final ComponentName provider;
+        final UserHandle profile;
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            provider = data.getParcelableExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER, ComponentName.class);
+            profile = data.getParcelableExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER_PROFILE, UserHandle.class);
+        } else {
+            @SuppressWarnings("deprecation")
+            ComponentName tmpProvider = data.getParcelableExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER);
+            provider = tmpProvider;
+            @SuppressWarnings("deprecation")
+            UserHandle tmpProfile = data.getParcelableExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER_PROFILE);
+            profile = tmpProfile;
+        }
 
-        new Handler().postDelayed(() -> {
+        new Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
             Log.d(TAG, "asking for permission");
             Intent intent = new Intent(AppWidgetManager.ACTION_APPWIDGET_BIND);
             intent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId);

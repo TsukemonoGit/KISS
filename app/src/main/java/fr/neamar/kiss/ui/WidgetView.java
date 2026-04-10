@@ -1,11 +1,11 @@
 package fr.neamar.kiss.ui;
 
 import android.appwidget.AppWidgetHostView;
+import android.appwidget.AppWidgetProviderInfo;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
-import android.graphics.Path;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.SizeF;
@@ -32,7 +32,7 @@ public class WidgetView extends AppWidgetHostView {
     private boolean mDeletePressed = false;
 
     private float mGestureStartRawX, mGestureStartRawY;
-    private int mStartLeft, mStartTop, mStartWidth, mStartHeight;
+    private int mStartLeft, mStartTop;
 
     private static final int RESIZE_LEFT = 1;
     private static final int RESIZE_TOP = 2;
@@ -46,7 +46,9 @@ public class WidgetView extends AppWidgetHostView {
 
     public interface OnWidgetInteractionListener {
         void onWidgetMoved(WidgetView view);
+
         void onWidgetResized(WidgetView view);
+
         void onWidgetDeleted(WidgetView view);
     }
 
@@ -77,55 +79,89 @@ public class WidgetView extends AppWidgetHostView {
         return mEditMode;
     }
 
+    // -------------------------------------------------------------------------
+    // Drawing
+    // -------------------------------------------------------------------------
+
     @Override
     protected void dispatchDraw(Canvas canvas) {
         super.dispatchDraw(canvas);
-        if (!mEditMode) return;
+        if (!mEditMode)
+            return;
 
         int w = getWidth();
         int h = getHeight();
         float density = getResources().getDisplayMetrics().density;
-        
-        // Semi-transparent background overlay
+
         mHandlePaint.setStyle(Paint.Style.FILL);
         mHandlePaint.setColor(Color.argb(50, 255, 255, 255));
         canvas.drawRoundRect(0, 0, w, h, 12 * density, 12 * density, mHandlePaint);
 
-        float margin = 8 * density;
-        float r = 6 * density; // handle radius
+        float r = 6 * density;
 
-        // Outline
         mHandlePaint.setStyle(Paint.Style.STROKE);
         mHandlePaint.setColor(Color.WHITE);
         mHandlePaint.setStrokeWidth(2 * density);
-        // Draw slightly inset so it matches the handles visually
         canvas.drawRoundRect(r, r, w - r, h - r, 12 * density, 12 * density, mHandlePaint);
 
-        // Handles (dots)
         mHandlePaint.setStyle(Paint.Style.FILL);
-        canvas.drawCircle(r,         h / 2f,     r, mHandlePaint); // Left
-        canvas.drawCircle(w - r,     h / 2f,     r, mHandlePaint); // Right
-        canvas.drawCircle(w / 2f,    r,          r, mHandlePaint); // Top
-        canvas.drawCircle(w / 2f,    h - r,      r, mHandlePaint); // Bottom
+        canvas.drawCircle(r, h / 2f, r, mHandlePaint); // Left
+        canvas.drawCircle(w - r, h / 2f, r, mHandlePaint); // Right
+        canvas.drawCircle(w / 2f, r, r, mHandlePaint); // Top
+        canvas.drawCircle(w / 2f, h - r, r, mHandlePaint); // Bottom
 
-        // Delete 'X' Button at Top-Right
-        float dr = 14 * density; // radius for delete button
-        float cx = w - dr; // flush with edge
-        float cy = dr;
+        float dr = deleteButtonRadius(density);
+        float cx = deleteButtonCx(w, density);
+        float cy = deleteButtonCy(density);
 
-        // Draw red circle
         mHandlePaint.setColor(Color.argb(200, 255, 50, 50));
         mHandlePaint.setStyle(Paint.Style.FILL);
         canvas.drawCircle(cx, cy, dr, mHandlePaint);
 
-        // Draw X lines
         mHandlePaint.setColor(Color.WHITE);
         mHandlePaint.setStyle(Paint.Style.STROKE);
         mHandlePaint.setStrokeWidth(2 * density);
-        float p = 5 * density; // padding for the X
+        float p = 5 * density;
         canvas.drawLine(cx - p, cy - p, cx + p, cy + p, mHandlePaint);
         canvas.drawLine(cx + p, cy - p, cx - p, cy + p, mHandlePaint);
     }
+
+    // -------------------------------------------------------------------------
+    // Touch — long-press cancellation (always fires regardless of child intercept)
+    // -------------------------------------------------------------------------
+
+    /**
+     * dispatchTouchEvent は子Viewが requestDisallowInterceptTouchEvent(true) を
+     * 呼んだ後も必ず呼ばれる。ここでスワイプを検出してキャンセルすることで、
+     * onInterceptTouchEvent の MOVE が届かない場合でも長押し判定を取り消せる。
+     */
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent ev) {
+        if (!mEditMode) {
+            switch (ev.getAction()) {
+                case MotionEvent.ACTION_MOVE: {
+                    float deltaX = Math.abs(ev.getRawX() - mDownX);
+                    float deltaY = Math.abs(ev.getRawY() - mDownY);
+                    if (deltaX > mTouchSlop * HORIZONTAL_SWIPE_CANCEL_MULTIPLIER
+                            || deltaY > mTouchSlop) {
+                        mHasPerformedLongPress = false;
+                        cancelPendingLongPress();
+                    }
+                    break;
+                }
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    mHasPerformedLongPress = false;
+                    cancelPendingLongPress();
+                    break;
+            }
+        }
+        return super.dispatchTouchEvent(ev);
+    }
+
+    // -------------------------------------------------------------------------
+    // Touch — intercept / delegate
+    // -------------------------------------------------------------------------
 
     @Override
     public boolean onInterceptTouchEvent(MotionEvent ev) {
@@ -141,50 +177,37 @@ public class WidgetView extends AppWidgetHostView {
                 if (mEditMode) {
                     mGestureStartRawX = ev.getRawX();
                     mGestureStartRawY = ev.getRawY();
-                    
-                    float density = getResources().getDisplayMetrics().density;
-                    float dr = 14 * density;
-                    float cx = getWidth() - dr;
-                    float cy = dr;
-                    float hitRadius = 24 * density; // generous hit radius
-                    
-                    if (Math.hypot(ev.getX() - cx, ev.getY() - cy) <= hitRadius) {
+
+                    if (isDeleteButtonHit(ev.getX(), ev.getY())) {
                         mDeletePressed = true;
                         mResizeFlags = 0;
                         mResizeMode = false;
-                        return true; // Consume touch for delete button
+                        return true;
                     }
                     mDeletePressed = false;
-                    
+
                     mResizeFlags = calculateResizeFlags(ev.getX(), ev.getY());
                     mResizeMode = (mResizeFlags != 0);
                     captureLayoutStart();
-                    
+
                     if (getParent() instanceof WidgetGridLayout) {
                         ((WidgetGridLayout) getParent()).startDragOrResize(this);
                     }
                     requestDisallowInterceptTouchEvent(true);
-                    return true; // Steal touch
+                    return true;
                 }
-                postCheckForLongClick();
+                if (ev.getX() >= 0 && ev.getX() <= getWidth()
+                        && ev.getY() >= 0 && ev.getY() <= getHeight()) {
+                    postCheckForLongClick();
+                }
                 break;
 
             case MotionEvent.ACTION_MOVE:
-                if (mEditMode) return true;
-                float deltaX = Math.abs(ev.getRawX() - mDownX);
-                float deltaY = Math.abs(ev.getRawY() - mDownY);
-                float horizontalCancelSlop = mTouchSlop * HORIZONTAL_SWIPE_CANCEL_MULTIPLIER;
-                if (deltaX > horizontalCancelSlop || deltaY > mTouchSlop) {
-                    mHasPerformedLongPress = false;
-                    cancelPendingLongPress();
-                }
-                break;
-
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
-                if (mEditMode) return true;
-                mHasPerformedLongPress = false;
-                cancelPendingLongPress();
+                if (mEditMode)
+                    return true;
+                // キャンセルは dispatchTouchEvent で処理済み。
                 break;
         }
         return false;
@@ -192,41 +215,29 @@ public class WidgetView extends AppWidgetHostView {
 
     @Override
     public boolean onTouchEvent(MotionEvent ev) {
-        if (!mEditMode) return super.onTouchEvent(ev);
+        if (!mEditMode)
+            return super.onTouchEvent(ev);
 
-        WidgetGridLayout grid = null;
-        if (getParent() instanceof WidgetGridLayout) {
-             grid = (WidgetGridLayout) getParent();
-        }
+        WidgetGridLayout grid = (getParent() instanceof WidgetGridLayout)
+                ? (WidgetGridLayout) getParent()
+                : null;
 
         float dx = ev.getRawX() - mGestureStartRawX;
         float dy = ev.getRawY() - mGestureStartRawY;
 
         switch (ev.getAction()) {
             case MotionEvent.ACTION_MOVE: {
-                if (mDeletePressed) return true; // Ignore moves while pressing delete
-                
+                if (mDeletePressed)
+                    return true;
+
                 if (grid != null) {
                     if (mResizeMode) {
                         int dLeft = (mResizeFlags & RESIZE_LEFT) != 0 ? (int) dx : 0;
                         int dRight = (mResizeFlags & RESIZE_RIGHT) != 0 ? (int) dx : 0;
                         int dTop = (mResizeFlags & RESIZE_TOP) != 0 ? (int) dy : 0;
                         int dBottom = (mResizeFlags & RESIZE_BOTTOM) != 0 ? (int) dy : 0;
-                        
-                        android.appwidget.AppWidgetProviderInfo info = getAppWidgetInfo();
-                        int minW = 40;
-                        int minH = 40;
-                        if (info != null) {
-                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.ICE_CREAM_SANDWICH) {
-                                minW = info.minResizeWidth > 0 ? info.minResizeWidth : info.minWidth;
-                                minH = info.minResizeHeight > 0 ? info.minResizeHeight : info.minHeight;
-                            } else {
-                                minW = info.minWidth;
-                                minH = info.minHeight;
-                            }
-                        }
-                        
-                        grid.previewResize(this, dLeft, dTop, dRight, dBottom, minW, minH);
+                        grid.previewResize(this, dLeft, dTop, dRight, dBottom,
+                                getMinResizeWidth(), getMinResizeHeight());
                     } else {
                         setTranslationX(dx);
                         setTranslationY(dy);
@@ -237,81 +248,120 @@ public class WidgetView extends AppWidgetHostView {
             }
             case MotionEvent.ACTION_UP: {
                 if (mDeletePressed) {
-                    float density = getResources().getDisplayMetrics().density;
-                    float dr = 14 * density;
-                    float cx = getWidth() - dr;
-                    float cy = dr;
-                    float hitRadius = 24 * density;
-                    if (Math.hypot(ev.getX() - cx, ev.getY() - cy) <= hitRadius) {
-                        if (mListener != null) mListener.onWidgetDeleted(this);
+                    if (isDeleteButtonHit(ev.getX(), ev.getY()) && mListener != null) {
+                        mListener.onWidgetDeleted(this);
                     }
                     mDeletePressed = false;
                     return true;
                 }
-                
-                boolean dropped = false;
-                if (grid != null) {
-                    dropped = grid.commitDragOrResize(this);
-                }
-                // Clear translations
+
+                boolean dropped = (grid != null) && grid.commitDragOrResize(this);
                 setTranslationX(0f);
                 setTranslationY(0f);
-                
+
                 if (dropped && mListener != null) {
-                    if (mResizeMode) mListener.onWidgetResized(this);
-                    else             mListener.onWidgetMoved(this);
+                    if (mResizeMode)
+                        mListener.onWidgetResized(this);
+                    else
+                        mListener.onWidgetMoved(this);
                 }
-                // Do NOT exit edit mode automatically, wait for outside click
                 return true;
             }
             case MotionEvent.ACTION_CANCEL:
                 mDeletePressed = false;
                 setTranslationX(0f);
                 setTranslationY(0f);
-                if (grid != null) grid.abortInteraction();
-                // Do NOT exit edit mode automatically
+                if (grid != null)
+                    grid.abortInteraction();
                 return true;
         }
         return true;
     }
 
+    // -------------------------------------------------------------------------
+    // Delete button geometry helpers
+    // -------------------------------------------------------------------------
+
+    private float deleteButtonRadius(float density) {
+        return 14 * density;
+    }
+
+    private float deleteButtonCx(int viewWidth, float density) {
+        return viewWidth - deleteButtonRadius(density);
+    }
+
+    private float deleteButtonCy(float density) {
+        return deleteButtonRadius(density);
+    }
+
+    /** ローカル座標 (localX, localY) が削除ボタンのヒット領域内かどうかを返す。 */
+    private boolean isDeleteButtonHit(float localX, float localY) {
+        float density = getResources().getDisplayMetrics().density;
+        float cx = deleteButtonCx(getWidth(), density);
+        float cy = deleteButtonCy(density);
+        float hitRadius = 24 * density;
+        return Math.hypot(localX - cx, localY - cy) <= hitRadius;
+    }
+
+    // -------------------------------------------------------------------------
+    // Resize helpers
+    // -------------------------------------------------------------------------
+
     private int calculateResizeFlags(float localX, float localY) {
         int w = getWidth();
         int h = getHeight();
-        // Negative margin pushes the center of the hit target OUTSIDE the widget bounds.
-        // This is possible because WidgetGridLayout forwards touches up to 32dp outside the bounds!
-        float margin = dpToPx(getContext(), -8); 
-        float r = dpToPx(getContext(), 24); // Reduced from 32; inward reach goes from 40dp to just 16dp
-        
+        float margin = dpToPx(getContext(), -8);
+        float r = dpToPx(getContext(), 24);
+
         int flags = 0;
-        // Left handle is at (margin, h/2)
-        if (Math.hypot(localX - margin, localY - h/2f) <= r) flags |= RESIZE_LEFT;
-        // Right handle is at (w - margin, h/2)
-        if (Math.hypot(localX - (w - margin), localY - h/2f) <= r) flags |= RESIZE_RIGHT;
-        // Top handle is at (w/2, margin)
-        if (Math.hypot(localX - w/2f, localY - margin) <= r) flags |= RESIZE_TOP;
-        // Bottom handle is at (w/2, h - margin)
-        if (Math.hypot(localX - w/2f, localY - (h - margin)) <= r) flags |= RESIZE_BOTTOM;
-        
+        if (Math.hypot(localX - margin, localY - h / 2f) <= r)
+            flags |= RESIZE_LEFT;
+        if (Math.hypot(localX - (w - margin), localY - h / 2f) <= r)
+            flags |= RESIZE_RIGHT;
+        if (Math.hypot(localX - w / 2f, localY - margin) <= r)
+            flags |= RESIZE_TOP;
+        if (Math.hypot(localX - w / 2f, localY - (h - margin)) <= r)
+            flags |= RESIZE_BOTTOM;
         return flags;
     }
 
+    private int getMinResizeWidth() {
+        AppWidgetProviderInfo info = getAppWidgetInfo();
+        if (info == null)
+            return 40;
+        return info.minResizeWidth > 0 ? info.minResizeWidth : info.minWidth;
+    }
+
+    private int getMinResizeHeight() {
+        AppWidgetProviderInfo info = getAppWidgetInfo();
+        if (info == null)
+            return 40;
+        return info.minResizeHeight > 0 ? info.minResizeHeight : info.minHeight;
+    }
+
+    // -------------------------------------------------------------------------
+    // Layout helpers
+    // -------------------------------------------------------------------------
+
     private void captureLayoutStart() {
         mStartLeft = getLeft();
-        mStartTop  = getTop();
-        mStartWidth = getWidth();
-        mStartHeight = getHeight();
+        mStartTop = getTop();
     }
 
     private static int dpToPx(Context context, int dp) {
         return (int) (dp * context.getResources().getDisplayMetrics().density);
     }
 
+    // -------------------------------------------------------------------------
+    // Long-press machinery
+    // -------------------------------------------------------------------------
+
     protected class CheckForLongPress implements Runnable {
         private int mOriginalWindowAttachCount;
+
         @Override
         public void run() {
-            if ((getParent() != null) && hasWindowFocus()
+            if (getParent() != null && hasWindowFocus()
                     && mOriginalWindowAttachCount == getWindowAttachCount()
                     && !WidgetView.this.mHasPerformedLongPress) {
                 if (performLongClick()) {
@@ -319,6 +369,7 @@ public class WidgetView extends AppWidgetHostView {
                 }
             }
         }
+
         void rememberWindowAttachCount() {
             mOriginalWindowAttachCount = getWindowAttachCount();
         }
@@ -346,12 +397,17 @@ public class WidgetView extends AppWidgetHostView {
         cancelPendingLongPress();
     }
 
+    // -------------------------------------------------------------------------
+    // Misc overrides
+    // -------------------------------------------------------------------------
+
     @Override
     public int getDescendantFocusability() {
         return ViewGroup.FOCUS_BLOCK_DESCENDANTS;
     }
 
     @Override
+    @SuppressWarnings("deprecation")
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
         float density = getResources().getDisplayMetrics().density;
