@@ -19,13 +19,16 @@ public class WidgetGridLayout extends ViewGroup {
     private static final String TAG = WidgetGridLayout.class.getSimpleName();
 
     public static final int COLUMNS = 4;
+    /** 端スワイプを通すための左右マージン (dp)。 */
+    private static final int EDGE_MARGIN_DP = 16;
+
     private int mCellWidth;
     private int mCellHeight;
+    private int mEdgeMargin;
 
     private boolean[][] mOccupied;
-    private int mRows = 5; // Default, will be recalculated
+    private int mRows = 5;
 
-    // Track max rows needed by content
     private int mCalculatedRows = 5;
 
     // Drag / Drop preview fields
@@ -55,7 +58,9 @@ public class WidgetGridLayout extends ViewGroup {
 
     private void init() {
         setWillNotDraw(false);
-        mCellHeight = (int) (75 * getResources().getDisplayMetrics().density); // Default 75dp cell height
+        float density = getResources().getDisplayMetrics().density;
+        mCellHeight = (int) (75 * density);
+        mEdgeMargin = (int) (EDGE_MARGIN_DP * density);
     }
 
     private WidgetView mTargetWidget = null;
@@ -66,13 +71,13 @@ public class WidgetGridLayout extends ViewGroup {
             mTargetWidget = null;
             float x = ev.getX();
             float y = ev.getY();
-            int tolerance = (int) (32 * getResources().getDisplayMetrics().density); // Match the generous 32dp grab radius
+            int tolerance = (int) (32 * getResources().getDisplayMetrics().density);
             for (int i = 0; i < getChildCount(); i++) {
                 View child = getChildAt(i);
                 if (child.getVisibility() != GONE && child instanceof WidgetView) {
                     WidgetView wv = (WidgetView) child;
                     if (wv.isInEditMode()) {
-                        if (x >= child.getLeft() - tolerance && x <= child.getRight() + tolerance 
+                        if (x >= child.getLeft() - tolerance && x <= child.getRight() + tolerance
                                 && y >= child.getTop() - tolerance && y <= child.getBottom() + tolerance) {
                             mTargetWidget = wv;
                         } else {
@@ -82,19 +87,19 @@ public class WidgetGridLayout extends ViewGroup {
                 }
             }
         }
-        
+
         if (mTargetWidget != null) {
             MotionEvent transformed = MotionEvent.obtain(ev);
             transformed.offsetLocation(-mTargetWidget.getLeft(), -mTargetWidget.getTop());
             mTargetWidget.dispatchTouchEvent(transformed);
             transformed.recycle();
-            
+
             if (ev.getAction() == MotionEvent.ACTION_UP || ev.getAction() == MotionEvent.ACTION_CANCEL) {
                 mTargetWidget = null;
             }
-            return true; // We consumed it, preventing background swipes
+            return true;
         }
-        
+
         return super.dispatchTouchEvent(ev);
     }
 
@@ -103,16 +108,18 @@ public class WidgetGridLayout extends ViewGroup {
         int widthSize = MeasureSpec.getSize(widthMeasureSpec);
         int heightSize = MeasureSpec.getSize(heightMeasureSpec);
 
-        mCellWidth = widthSize / COLUMNS;
-        if (mCellWidth == 0) mCellWidth = 1;
+        // マージン分を除いた幅でセル幅を計算する
+        int contentWidth = widthSize - 2 * mEdgeMargin;
+        mCellWidth = contentWidth / COLUMNS;
+        if (mCellWidth == 0)
+            mCellWidth = 1;
 
         if (heightSize > 0) {
             mCalculatedRows = Math.max(1, heightSize / mCellHeight);
         }
-        
+
         mRows = mCalculatedRows;
 
-        // First pass: adjust mRows to fit all children if somehow they span beyond normal height
         for (int i = 0; i < getChildCount(); i++) {
             View child = getChildAt(i);
             if (child.getVisibility() != GONE) {
@@ -122,20 +129,18 @@ public class WidgetGridLayout extends ViewGroup {
                 }
             }
         }
-        
+
         mOccupied = new boolean[COLUMNS][mRows];
 
-        // Measure children
         for (int i = 0; i < getChildCount(); i++) {
             View child = getChildAt(i);
             if (child.getVisibility() != GONE) {
                 LayoutParams lp = (LayoutParams) child.getLayoutParams();
-                
+
                 int childWidthMeasureSpec = MeasureSpec.makeMeasureSpec(lp.spanX * mCellWidth, MeasureSpec.EXACTLY);
                 int childHeightMeasureSpec = MeasureSpec.makeMeasureSpec(lp.spanY * mCellHeight, MeasureSpec.EXACTLY);
                 child.measure(childWidthMeasureSpec, childHeightMeasureSpec);
-                
-                // Mark occupied (skip the view currently being dragged)
+
                 if (child != mDragView) {
                     markCells(lp.cellX, lp.cellY, lp.spanX, lp.spanY, true);
                 }
@@ -151,9 +156,12 @@ public class WidgetGridLayout extends ViewGroup {
             View child = getChildAt(i);
             if (child.getVisibility() != GONE) {
                 LayoutParams lp = (LayoutParams) child.getLayoutParams();
-                int childLeft = lp.cellX * mCellWidth;
+                // マージンを加算してコンテンツ領域の左端を揃える
+                int childLeft = mEdgeMargin + lp.cellX * mCellWidth;
                 int childTop = lp.cellY * mCellHeight;
-                child.layout(childLeft, childTop, childLeft + child.getMeasuredWidth(), childTop + child.getMeasuredHeight());
+                child.layout(childLeft, childTop,
+                        childLeft + child.getMeasuredWidth(),
+                        childTop + child.getMeasuredHeight());
             }
         }
     }
@@ -161,33 +169,42 @@ public class WidgetGridLayout extends ViewGroup {
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
-        
+
         if (mDragView != null && mDropTargetCellX >= 0 && mDropTargetCellY >= 0) {
             if (mDropTargetValid) {
-                mPreviewPaint.setColor(Color.argb(100, 100, 255, 100)); // Greenish
+                mPreviewPaint.setColor(Color.argb(100, 100, 255, 100));
             } else {
-                mPreviewPaint.setColor(Color.argb(100, 255, 100, 100)); // Reddish
+                mPreviewPaint.setColor(Color.argb(100, 255, 100, 100));
             }
-            
-            int left = mDropTargetCellX * mCellWidth;
+
+            // プレビュー矩形もマージンを加算する
+            int left = mEdgeMargin + mDropTargetCellX * mCellWidth;
             int top = mDropTargetCellY * mCellHeight;
-            int right = left + (mDropTargetSpanX * mCellWidth);
-            int bottom = top + (mDropTargetSpanY * mCellHeight);
-            
-            int padding = (int)(2 * getResources().getDisplayMetrics().density);
+            int right = left + mDropTargetSpanX * mCellWidth;
+            int bottom = top + mDropTargetSpanY * mCellHeight;
+
+            int padding = (int) (2 * getResources().getDisplayMetrics().density);
             canvas.drawRect(left + padding, top + padding, right - padding, bottom - padding, mPreviewPaint);
         }
     }
 
     // --- Grid Logic ---
 
-    public int getCellWidth() { return mCellWidth; }
-    public int getCellHeight() { return mCellHeight; }
+    public int getCellWidth() {
+        return mCellWidth;
+    }
 
-    public int getRows() { return mRows; }
+    public int getCellHeight() {
+        return mCellHeight;
+    }
+
+    public int getRows() {
+        return mRows;
+    }
 
     private void markCells(int x, int y, int spanX, int spanY, boolean occupied) {
-        if (mOccupied == null) return;
+        if (mOccupied == null)
+            return;
         for (int ix = x; ix < x + spanX; ix++) {
             for (int iy = y; iy < y + spanY; iy++) {
                 if (ix >= 0 && ix < COLUMNS && iy >= 0 && iy < mRows) {
@@ -199,10 +216,9 @@ public class WidgetGridLayout extends ViewGroup {
 
     public boolean isAreaEmpty(int x, int y, int spanX, int spanY, View ignoreView) {
         if (x < 0 || y < 0 || x + spanX > COLUMNS) {
-            return false; // Horizontal or negative vertical out of bounds
+            return false;
         }
-        
-        // Build an occupancy mask excluding the ignored view safely
+
         int rowsSafe = Math.max(mRows, y + spanY);
         boolean[][] tempOccupied = new boolean[COLUMNS][rowsSafe];
         for (int i = 0; i < getChildCount(); i++) {
@@ -221,30 +237,25 @@ public class WidgetGridLayout extends ViewGroup {
 
         for (int ix = x; ix < x + spanX; ix++) {
             for (int iy = y; iy < y + spanY; iy++) {
-                if (tempOccupied[ix][iy]) {
+                if (tempOccupied[ix][iy])
                     return false;
-                }
             }
         }
         return true;
     }
 
-    /**
-     * Finds the first empty space that can fit the given spans.
-     * Returns a 2-element array [cellX, cellY] or null if no space.
-     */
     public int[] findFirstEmptySpace(int spanX, int spanY) {
-        if (mOccupied == null) return null; // Not measured yet
-        // allow searching below current mRows if the widget is tall or grid is full
-        int searchRows = Math.max(mRows, mRows + spanY); 
+        if (mOccupied == null)
+            return null;
+        int searchRows = Math.max(mRows, mRows + spanY);
         for (int y = 0; y <= searchRows; y++) {
             for (int x = 0; x <= COLUMNS - spanX; x++) {
                 if (isAreaEmpty(x, y, spanX, spanY, null)) {
-                    return new int[]{x, y};
+                    return new int[] { x, y };
                 }
             }
         }
-        return null; // Grid might be totally full (unlikely if it grows infinitely downwards) or widget too large horizontally
+        return null;
     }
 
     // --- Drag and Resize ---
@@ -262,15 +273,14 @@ public class WidgetGridLayout extends ViewGroup {
 
     public void previewMove(View view, float pixelX, float pixelY) {
         LayoutParams lp = (LayoutParams) view.getLayoutParams();
-        
+
         mDropTargetSpanX = lp.spanX;
         mDropTargetSpanY = lp.spanY;
 
-        // Determine destination cell by adding half a cell size for snapping center
-        mDropTargetCellX = Math.round(pixelX / mCellWidth);
+        // pixelX はウィジェットの getLeft() ベース。マージン分を引いてセル座標に変換する
+        mDropTargetCellX = Math.round((pixelX - mEdgeMargin) / mCellWidth);
         mDropTargetCellY = Math.round(pixelY / mCellHeight);
 
-        // Clamp to borders
         mDropTargetCellX = Math.max(0, Math.min(mDropTargetCellX, COLUMNS - mDropTargetSpanX));
         mDropTargetCellY = Math.max(0, Math.min(mDropTargetCellY, mRows - mDropTargetSpanY));
 
@@ -278,10 +288,11 @@ public class WidgetGridLayout extends ViewGroup {
         invalidate();
     }
 
-    public void previewResize(View view, int dLeft, int dTop, int dRight, int dBottom, int minWidthDp, int minHeightDp) {
+    public void previewResize(View view, int dLeft, int dTop, int dRight, int dBottom, int minWidthDp,
+            int minHeightDp) {
         LayoutParams lp = (LayoutParams) view.getLayoutParams();
-        float density = getResources().getDisplayMetrics().density;
-        
+
+        // リサイズはセル座標からのデルタ計算のためマージンは不要
         int targetPixelLeft = lp.cellX * mCellWidth + dLeft;
         int targetPixelRight = (lp.cellX + lp.spanX) * mCellWidth + dRight;
         int targetPixelTop = lp.cellY * mCellHeight + dTop;
@@ -292,40 +303,37 @@ public class WidgetGridLayout extends ViewGroup {
         mDropTargetCellY = Math.round((float) targetPixelTop / mCellHeight);
         int newBottomCell = Math.round((float) targetPixelBottom / mCellHeight);
 
-        // Force absolute 1x1 minimum for ultimate freedom
         int minSpanX = 1;
         int minSpanY = 1;
-        
+
         int newSpanX = newRightCell - mDropTargetCellX;
         if (newSpanX < minSpanX) {
-            if (dLeft != 0) mDropTargetCellX = newRightCell - minSpanX;
-            else newRightCell = mDropTargetCellX + minSpanX;
+            if (dLeft != 0)
+                mDropTargetCellX = newRightCell - minSpanX;
+            else
+                newRightCell = mDropTargetCellX + minSpanX;
             newSpanX = minSpanX;
         }
-        
+
         int newSpanY = newBottomCell - mDropTargetCellY;
         if (newSpanY < minSpanY) {
-            if (dTop != 0) mDropTargetCellY = newBottomCell - minSpanY;
-            else newBottomCell = mDropTargetCellY + minSpanY;
+            if (dTop != 0)
+                mDropTargetCellY = newBottomCell - minSpanY;
+            else
+                newBottomCell = mDropTargetCellY + minSpanY;
             newSpanY = minSpanY;
         }
 
-        // Clamp to screen bounds
-        if (mDropTargetCellX < 0) {
+        if (mDropTargetCellX < 0)
             mDropTargetCellX = 0;
-            // newSpanX = Math.max(minSpanX, newRightCell - mDropTargetCellX); // Not strictly needed
-        }
-        if (mDropTargetCellY < 0) {
+        if (mDropTargetCellY < 0)
             mDropTargetCellY = 0;
-        }
 
-        // Prevent exceeding right edge
         if (mDropTargetCellX + newSpanX > COLUMNS) {
-            if (dRight != 0) {
+            if (dRight != 0)
                 newSpanX = COLUMNS - mDropTargetCellX;
-            } else if (dLeft != 0) {
+            else if (dLeft != 0)
                 mDropTargetCellX = COLUMNS - newSpanX;
-            }
         }
 
         mDropTargetSpanX = Math.max(minSpanX, newSpanX);
@@ -335,9 +343,6 @@ public class WidgetGridLayout extends ViewGroup {
         invalidate();
     }
 
-    /**
-     * Applies the drop locally and returns whether it was valid.
-     */
     public boolean commitDragOrResize(View view) {
         boolean valid = mDropTargetValid;
         if (valid && mDragView == view) {
@@ -346,10 +351,9 @@ public class WidgetGridLayout extends ViewGroup {
             lp.cellY = mDropTargetCellY;
             lp.spanX = mDropTargetSpanX;
             lp.spanY = mDropTargetSpanY;
-            requestLayout(); // Cause a relayout
+            requestLayout();
         }
-        
-        // Reset state
+
         mDragView = null;
         mDropTargetCellX = -1;
         mDropTargetCellY = -1;
@@ -363,7 +367,6 @@ public class WidgetGridLayout extends ViewGroup {
         mDropTargetCellY = -1;
         invalidate();
     }
-
 
     // --- LayoutParams ---
 
